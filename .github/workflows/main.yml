@@ -1,28 +1,35 @@
-name: Jharkhand Job Bot
+name: Jharkhand Job Bot Advanced
 
 on:
   schedule:
-    - cron: '0 */2 * * *'  # हर 2 घंटे में चलेगा (UTC time)
-  workflow_dispatch:      # Manual button to test
+    - cron: '0 */2 * * *' # हर 2 घंटे में
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: |
-          pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4
 
       - name: Run Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python bot.py
+
+      - name: Commit and Push History (Point 4)
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "action@github.com"
+          git add history.json
+          git commit -m "Update job history" || exit 0
+          git push
