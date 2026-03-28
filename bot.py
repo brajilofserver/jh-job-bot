@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import json
+from datetime import datetime
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -25,8 +26,19 @@ def send_msg(text):
     params = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
     requests.get(url, params=params)
 
+def parse_date(date_str):
+    """तारीख को Python के समझने लायक बनाने के लिए"""
+    formats = ['%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d']
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str.strip(), fmt).date()
+        except ValueError:
+            continue
+    return None
+
 def check_updates():
     new_jobs_found = False
+    today = datetime.now().date()
     
     for dist in DISTRICTS:
         url = f"https://{dist}.nic.in/notice/recruitment/"
@@ -36,22 +48,29 @@ def check_updates():
             table = soup.find('table')
             
             if table:
-                rows = table.find_all('tr')[1:] # सभी Rows चेक करेगा
+                rows = table.find_all('tr')[1:] 
                 for row in rows:
                     cols = row.find_all('td')
                     if len(cols) < 4: continue
                     
                     title = cols[0].text.strip()
-                    description = cols[1].text.strip() # इसमें अक्सर Qualification होती है
-                    start_date = cols[2].text.strip() # शुरू होने की तारीख
-                    end_date = cols[3].text.strip()   # आखिरी तारीख
+                    description = cols[1].text.strip()
+                    start_date_str = cols[2].text.strip()
+                    end_date_str = cols[3].text.strip()
                     
-                    # Duplicate चेक (Title + End Date का कॉम्बिनेशन ताकि डेटा सटीक रहे)
-                    unique_id = f"{dist}_{title}_{end_date}"
+                    # --- तारीख फ़िल्टर (Point 1: सिर्फ Present Data) ---
+                    end_date = parse_date(end_date_str)
+                    
+                    # अगर तारीख नहीं मिली या Last Date बीत चुकी है, तो skip करें
+                    if end_date and end_date < today:
+                        continue
+                    
+                    # Duplicate चेक
+                    unique_id = f"{dist}_{title}_{end_date_str}"
                     if unique_id in history:
                         continue
                     
-                    # PDF Link निकालना
+                    # PDF Link
                     pdf_link = ""
                     link_tag = row.find('a', href=True)
                     if link_tag:
@@ -59,18 +78,14 @@ def check_updates():
                         if not pdf_link.startswith('http'):
                             pdf_link = f"https://{dist}.nic.in" + pdf_link
 
-                    # मैसेज तैयार करना
-                    msg = f"<b>🏢 DISTRICT: {dist.upper()}</b>\n\n"
+                    # मैसेज
+                    msg = f"<b>🌟 ACTIVE JOB: {dist.upper()}</b>\n\n"
                     msg += f"📝 <b>Post:</b> {title}\n"
-                    
-                    # अगर Description में Qualification लिखी है (जैसे 10th, Graduate, etc.)
                     if len(description) > 5:
-                        msg += f"🎓 <b>Qualification/Detail:</b> {description}\n"
-                    else:
-                        msg += f"🎓 <b>Qualification:</b> (Check PDF for details)\n"
-                        
-                    msg += f"📅 <b>Start Date:</b> {start_date}\n"
-                    msg += f"🚫 <b>Last Date:</b> {end_date}\n\n"
+                        msg += f"🎓 <b>Detail:</b> {description}\n"
+                    
+                    msg += f"📅 <b>Start:</b> {start_date_str}\n"
+                    msg += f"🚫 <b>Last Date:</b> {end_date_str}\n\n"
                     
                     if pdf_link:
                         msg += f"📎 <a href='{pdf_link}'><b>Download Official PDF</b></a>\n"
@@ -79,13 +94,11 @@ def check_updates():
                     send_msg(msg)
                     history.append(unique_id)
                     new_jobs_found = True
-        except Exception as e:
-            print(f"Error in {dist}: {e}")
+        except:
             continue
 
     if new_jobs_found:
         with open(DB_FILE, "w") as f:
-            # सिर्फ लेटेस्ट 100 रिकॉर्ड्स रखें ताकि फाइल भारी न हो
             json.dump(history[-100:], f)
 
 if __name__ == "__main__":
