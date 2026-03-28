@@ -1,0 +1,28 @@
+name: Jharkhand Job Bot
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # हर 2 घंटे में चलेगा (UTC time)
+  workflow_dispatch:      # Manual button to test
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run Bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python bot.py
