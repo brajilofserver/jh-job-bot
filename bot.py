@@ -7,10 +7,13 @@ TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 DB_FILE = "history.json"
 
-# जिलों की लिस्ट
-DISTRICTS = ["ranchi", "dhanbad", "bokaro", "jamshedpur", "deoghar", "hazaribag", "giridih", "dumka", "palamu", "ramgarh"]
+# झारखंड के सभी 24 जिले
+DISTRICTS = [
+    "ranchi", "dhanbad", "bokaro", "jamshedpur", "deoghar", "hazaribag", "giridih", "dumka",
+    "godda", "sahibganj", "palamu", "garhwa", "latehar", "chatra", "koderma", "gumla", 
+    "lohardaga", "simdega", "khunti", "ramgarh", "pakur", "jamtara", "west-singhbhum", "seraiekela"
+]
 
-# 1. History लोड करना (Point 4: Duplicate Prevention)
 if os.path.exists(DB_FILE):
     with open(DB_FILE, "r") as f:
         history = json.load(f)
@@ -19,30 +22,36 @@ else:
 
 def send_msg(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.get(url, params={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": False})
+    params = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    requests.get(url, params=params)
 
 def check_updates():
     new_jobs_found = False
     
-    # --- Districts & Civil Courts Monitoring (Point 3) ---
     for dist in DISTRICTS:
         url = f"https://{dist}.nic.in/notice/recruitment/"
         try:
-            r = requests.get(url, timeout=15)
+            r = requests.get(url, timeout=20)
             soup = BeautifulSoup(r.text, 'html.parser')
             table = soup.find('table')
             
             if table:
-                rows = table.find_all('tr')[1:4] # टॉप 3 चेक करेगा
+                rows = table.find_all('tr')[1:] # सभी Rows चेक करेगा
                 for row in rows:
                     cols = row.find_all('td')
-                    title = cols[0].text.strip()
+                    if len(cols) < 4: continue
                     
-                    # Point 4: अगर यह टाइटल पहले भेज चुके हैं तो छोड़ दो
-                    if title in history:
+                    title = cols[0].text.strip()
+                    description = cols[1].text.strip() # इसमें अक्सर Qualification होती है
+                    start_date = cols[2].text.strip() # शुरू होने की तारीख
+                    end_date = cols[3].text.strip()   # आखिरी तारीख
+                    
+                    # Duplicate चेक (Title + End Date का कॉम्बिनेशन ताकि डेटा सटीक रहे)
+                    unique_id = f"{dist}_{title}_{end_date}"
+                    if unique_id in history:
                         continue
                     
-                    # Point 5: PDF Direct Link निकालना
+                    # PDF Link निकालना
                     pdf_link = ""
                     link_tag = row.find('a', href=True)
                     if link_tag:
@@ -50,33 +59,34 @@ def check_updates():
                         if not pdf_link.startswith('http'):
                             pdf_link = f"https://{dist}.nic.in" + pdf_link
 
-                    msg = f"<b>🆕 NEW UPDATE: {dist.upper()}</b>\n\n"
-                    msg += f"📝 {title}\n"
+                    # मैसेज तैयार करना
+                    msg = f"<b>🏢 DISTRICT: {dist.upper()}</b>\n\n"
+                    msg += f"📝 <b>Post:</b> {title}\n"
+                    
+                    # अगर Description में Qualification लिखी है (जैसे 10th, Graduate, etc.)
+                    if len(description) > 5:
+                        msg += f"🎓 <b>Qualification/Detail:</b> {description}\n"
+                    else:
+                        msg += f"🎓 <b>Qualification:</b> (Check PDF for details)\n"
+                        
+                    msg += f"📅 <b>Start Date:</b> {start_date}\n"
+                    msg += f"🚫 <b>Last Date:</b> {end_date}\n\n"
+                    
                     if pdf_link:
-                        msg += f"📎 <b>Direct PDF:</b> <a href='{pdf_link}'>Download Here</a>\n"
-                    msg += f"🔗 <b>Page:</b> <a href='{url}'>Open Site</a>"
+                        msg += f"📎 <a href='{pdf_link}'><b>Download Official PDF</b></a>\n"
+                    msg += f"🔗 <a href='{url}'><b>Open Recruitment Page</b></a>"
                     
                     send_msg(msg)
-                    history.append(title)
+                    history.append(unique_id)
                     new_jobs_found = True
-        except:
+        except Exception as e:
+            print(f"Error in {dist}: {e}")
             continue
 
-    # High Court Specific (Point 3)
-    hc_url = "https://jharkhandhighcourt.nic.in/recruitment"
-    try:
-        r = requests.get(hc_url)
-        if "Recruitment" in r.text and "High Court" not in history:
-            send_msg(f"<b>⚖️ Jharkhand High Court Update</b>\nNayi bharti check karein.\n🔗 {hc_url}")
-            history.append("High Court")
-            new_jobs_found = True
-    except:
-        pass
-
-    # History को सुरक्षित करना (ताकि अगली बार दोबारा न भेजे)
     if new_jobs_found:
         with open(DB_FILE, "w") as f:
-            json.dump(history[-100:], f) # सिर्फ आखरी 100 रिकॉर्ड्स रखेगा
+            # सिर्फ लेटेस्ट 100 रिकॉर्ड्स रखें ताकि फाइल भारी न हो
+            json.dump(history[-100:], f)
 
 if __name__ == "__main__":
     check_updates()
